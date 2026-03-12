@@ -51,16 +51,19 @@ services:
       - dev-network
 
   proxy:
-    image: node:lts-alpine
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev-proxy
     working_dir: /app/server
     command: node index.js
     volumes:
       - ./server:/app/server:ro
-      - ./server/node_modules:/app/server/node_modules
+      - /app/server/node_modules  # anonymous volume 保留容器內的 node_modules
     expose:
       - "3002"
     environment:
       - PORT=3002
+      - CHROME_PATH=/usr/local/bin/chrome-headless-shell
     networks:
       - dev-network
 

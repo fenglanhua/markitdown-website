@@ -1,0 +1,31 @@
+# docker/Dockerfile.dev-proxy
+FROM node:20-slim
+
+# 安裝 chrome-headless-shell 所需系統函式庫
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/server
+
+# 安裝依賴 + chrome-headless-shell
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --production \
+    && npx @puppeteer/browsers install chrome-headless-shell@stable --install-dir /app/chrome-hs \
+    && CHROME_BIN=$(find /app/chrome-hs -name chrome-headless-shell -type f | head -1) \
+    && ln -s "$CHROME_BIN" /usr/local/bin/chrome-headless-shell
+
+ENV CHROME_PATH=/usr/local/bin/chrome-headless-shell
