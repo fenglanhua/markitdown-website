@@ -588,6 +588,8 @@ function resetToUpload() {
   urlInput.value = '';
   fileInput.value = '';
   dismissError();
+  urlInput.disabled = !(isOnline && isEngineReady);
+  btnFetchUrl.disabled = !(isOnline && isEngineReady);
   showState(STATES.UPLOAD);
 }
 
