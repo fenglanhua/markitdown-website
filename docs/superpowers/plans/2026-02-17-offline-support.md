@@ -158,11 +158,11 @@ git commit -m "feat: add Service Worker with offline caching support"
 **Step 1: 確認 index.html 末尾結構**
 
 讀取 `index.html` 末尾，確認 script 標籤位置，預期看到：
+
 ```html
-  <script src="/js/lib/jszip.min.js"></script>
-  <script src="/js/main.js"></script>
-</body>
-</html>
+
+<script src="/js/lib/jszip.min.js"></script>
+<script src="/js/main.js"></script></body></html>
 ```
 
 **Step 2: 在 jszip.min.js script 前插入 SW 註冊程式碼**

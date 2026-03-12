@@ -159,10 +159,11 @@ git commit -m "feat: add PWA web app manifest"
 **Step 1: 確認 index.html 目前的 head 結構**
 
 讀取 `index.html` 前 30 行，確認目前結構，預期看到：
+
 ```html
-  <link rel="icon" type="image/svg+xml" href="/images/favicon.svg" />
-  <link rel="stylesheet" href="/css/style.css" />
-</head>
+
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg"/>
+<link rel="stylesheet" href="/css/style.css"/></head>
 ```
 
 **Step 2: 在 `<link rel="icon">` 之後插入三個 PWA 標籤**

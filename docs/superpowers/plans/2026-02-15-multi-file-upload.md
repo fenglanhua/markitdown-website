@@ -75,7 +75,9 @@ git commit -m "feat: 新增 JSZip 3.10.1 函式庫"
 ```
 
 **Step 2: 在 `</body>` 前，`main.js` 的 `<script>` 標籤之前插入 JSZip**
+
 ```html
+
 <script src="/js/lib/jszip.min.js"></script>
 <script src="/js/main.js"></script>
 ```

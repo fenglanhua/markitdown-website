@@ -69,9 +69,10 @@ uv run scripts/generate_icons.py
 在 `<head>` 區塊的 `<link rel="icon">` 附近新增：
 
 ```html
-<link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#2d2d2d" />
-<link rel="apple-touch-icon" href="/images/icon-180.png" />
+
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#2d2d2d"/>
+<link rel="apple-touch-icon" href="/images/icon-180.png"/>
 ```
 
 ## sw.js 修改
