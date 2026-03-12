@@ -69,8 +69,10 @@ function createWorker() {
         // 等進度條 100% 的 transition（0.5s）播完後，同步顯示文件框並隱藏進度條
         setTimeout(() => {
           dropZone.classList.remove('drop-zone--disabled');
-          urlInput.disabled = false;
-          btnFetchUrl.disabled = false;
+          if (isOnline) {
+            urlInput.disabled = false;
+            btnFetchUrl.disabled = false;
+          }
           document.getElementById('upload-engine-status').hidden = true;
         }, 600);
         break;
