@@ -46,7 +46,7 @@
 
 ### 拖放停用
 
-document 層級的 `dragover`/`dragleave`/`drop` handler 需加入守衛，當 `currentState !== STATES.UPLOAD` 時 return early，不接受檔案。上傳頁的拖放功能不受影響。`.page--dragging` CSS 保留（上傳頁仍使用）。
+document 層級的 `dragover`/`dragleave`/`drop` handler 完全移除（僅列表頁使用，上傳頁有自己的 dropZone handler 不受影響）。`.page--dragging` CSS 一併移除（變成死碼）。
 
 ### 死碼清理
 
