@@ -13,7 +13,7 @@
 ## 功能特色
 
 - **隱私優先**：檔案在瀏覽器內處理，完全離線可用，零伺服器傳輸
-- **網址轉換**：輸入網頁網址，經由伺服器代理取得內容後在瀏覽器中轉換
+- **網址轉換**：輸入網頁網址，經由伺服器端 Headless Chrome 取得完整渲染內容（支援 JavaScript 渲染頁面）後在瀏覽器中轉換
 - **免安裝**：使用者只需一個瀏覽器，無需安裝任何軟體
 - **多格式支援**：PDF、DOCX、XLSX、PPTX、HTML、CSV、EPUB
 - **離線可用**：首次初始化後，無需網路即可使用（Service Worker 快取）
@@ -85,10 +85,13 @@ docker compose -f docker-compose-dev.yml up
             ├── markitdown 0.1.4（純 Python wheel）
             └── 依賴套件：pdfminer.six、python-docx、openpyxl、python-pptx…
 
-伺服器（Node.js）
+伺服器（Node.js + Headless Chrome）
 └── server/
-    ├── index.js             Express 入口（Rate Limiting、Health Check）
-    └── fetch-url.js         URL 代理（SSRF 防護、10MB 限制、15s 逾時）
+    ├── index.js             Express 入口（Rate Limiting、Health Check、Browser 生命週期）
+    ├── fetch-url.js         URL 抓取（Puppeteer 渲染 + 二進位直接下載分流）
+    ├── browser.js           Chrome Headless 生命週期管理（啟動、重連、關閉）
+    ├── semaphore.js         並行頁面數量控制（預設上限 5）
+    └── semaphore-instance.js 共享 Semaphore 實例
             │
             └── Nginx 反向代理 /api/ → Node.js :3002
 ```
@@ -103,7 +106,8 @@ docker compose -f docker-compose-dev.yml up
 | **COOP/COEP 標頭**          | SharedArrayBuffer 的瀏覽器安全要求                 |
 | **magika stub**           | 取代無 WASM 版的 magika，讓 markitdown 回退至副檔名推斷路徑 |
 | **Service Worker + Web App Manifest** | 實現離線快取與 PWA 可安裝性，瀏覽器自動提示安裝 |
-| **Node.js URL Proxy**     | 伺服器端代理取得網頁內容，含 SSRF 防護與速率限制       |
+| **Headless Chrome + Puppeteer** | 伺服器端使用 chrome-headless-shell 渲染 JS 頁面，二進位檔案直接下載 |
+| **Node.js URL Proxy**     | Express 代理，含 SSRF 防護、速率限制、並行控制（Semaphore）       |
 
 ## 支援格式
 
@@ -139,24 +143,29 @@ markitdown-website/
 │   ├── main.js                   UI 邏輯
 │   └── converter.worker.js       轉換 Web Worker
 ├── server/
-│   ├── index.js                  Node.js Express 入口
-│   ├── fetch-url.js              URL 代理路由（SSRF 防護）
+│   ├── index.js                  Node.js Express 入口（Browser 生命週期）
+│   ├── fetch-url.js              URL 抓取路由（Puppeteer + SSRF 防護）
+│   ├── browser.js                Chrome Headless 生命週期管理
+│   ├── semaphore.js              並行控制 Semaphore
+│   ├── semaphore-instance.js     共享 Semaphore 實例
 │   ├── package.json
 │   └── __tests__/
-│       └── fetch-url.test.js     代理路由單元測試
+│       ├── fetch-url.test.js     URL 抓取單元測試
+│       ├── browser.test.js       Browser 管理單元測試
+│       └── semaphore.test.js     Semaphore 單元測試
 ├── scripts/
 │   └── download_wheels.py        建置腳本（下載 Pyodide + wheels）
 ├── docker/
 │   ├── nginx.conf                Docker 用 Nginx 設定（正式環境）
 │   ├── nginx-dev.conf            Docker 用 Nginx 設定（開發環境）
-│   └── start.sh                  容器啟動腳本（Node.js + Nginx）
+│   ├── start.sh                  容器啟動腳本（Node.js + Nginx）
+│   └── Dockerfile.dev-proxy      開發環境 proxy Dockerfile（含 Chrome）
 ├── examples/
-│   ├── nginx.conf                一般部署用 Nginx 設定範本
 │   └── nginx-reverse-proxy.conf  Nginx 反向代理範本（Docker + SSL）
 ├── .github/
 │   └── workflows/
 │       └── docker-publish.yml    CI/CD：自動建置並推送至 Docker Hub
-├── Dockerfile                    多階段 Docker 建置
+├── Dockerfile                    多階段 Docker 建置（Debian slim + Chrome）
 ├── docker-compose.yml            Docker Compose 設定（正式環境）
 ├── docker-compose-dev.yml        Docker Compose 設定（本地開發，含熱重載）
 ├── .dockerignore
@@ -172,31 +181,6 @@ markitdown-website/
 參考 [examples/nginx-reverse-proxy.conf](examples/nginx-reverse-proxy.conf)，修改 `server_name` 和 SSL 憑證路徑後套用即可。
 
 > COOP/COEP 安全標頭已由容器內的 Nginx 設定，反向代理層直接透傳，**不需要重複設定**。
-
-## 部署（不使用 Docker）
-
-1. Clone 專案並下載所有資源：
-   ```bash
-   git clone https://github.com/GoneTone/markitdown-website.git
-   cd markitdown-website
-   python scripts/download_wheels.py
-   ```
-
-2. 安裝並啟動 URL 代理（用於網址轉換功能）：
-   ```bash
-   cd server
-   npm ci
-   node index.js
-   ```
-   > 建議使用 [PM2](https://pm2.keymetrics.io/) 或 systemd 管理 Node.js 程序，確保服務在背景持續運行並自動重啟。
-
-3. 將整個目錄（含 `pyodide/`、`wheels/`）部署至 Nginx
-
-4. 參考 [examples/nginx.conf](examples/nginx.conf) 設定虛擬主機，**必須加入以下兩個標頭**：
-   ```nginx
-   add_header Cross-Origin-Opener-Policy  "same-origin"  always;
-   add_header Cross-Origin-Embedder-Policy "require-corp" always;
-   ```
 
 ## 授權
 
