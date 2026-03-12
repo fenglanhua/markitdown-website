@@ -20,6 +20,8 @@ services:
     # nginx 只在內部網路暴露，不對外開放（由 browser-sync 代理）
     expose:
       - "80"
+    depends_on:
+      - proxy
     networks:
       - dev-network
 
@@ -45,6 +47,20 @@ services:
       - "3001:3001"   # WebSocket（browser-sync 重載通知用）
     depends_on:
       - nginx
+    networks:
+      - dev-network
+
+  proxy:
+    image: node:lts-alpine
+    working_dir: /app/server
+    command: node index.js
+    volumes:
+      - ./server:/app/server:ro
+      - ./server/node_modules:/app/server/node_modules
+    expose:
+      - "3002"
+    environment:
+      - PORT=3002
     networks:
       - dev-network
 
