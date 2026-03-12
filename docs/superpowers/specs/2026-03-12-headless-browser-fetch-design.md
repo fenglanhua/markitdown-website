@@ -72,7 +72,7 @@ Server 關閉 → browser.close()
 
 ```javascript
 puppeteer.launch({
-  executablePath: process.env.CHROME_PATH || '/app/chrome-headless-shell/chrome-headless-shell',
+  executablePath: process.env.CHROME_PATH || '/usr/local/bin/chrome-headless-shell',
   headless: true,
   args: [
     '--no-sandbox',
@@ -85,7 +85,7 @@ puppeteer.launch({
 });
 ```
 
-`executablePath` 透過環境變數 `CHROME_PATH` 設定，Dockerfile 中使用 `@puppeteer/browsers install --install-dir /app/chrome-headless-shell` 安裝至固定路徑。
+`executablePath` 透過環境變數 `CHROME_PATH` 設定。Dockerfile 中使用 `@puppeteer/browsers install --install-dir` 安裝後，建立 symlink 至 `/usr/local/bin/chrome-headless-shell` 以簡化路徑管理。
 
 ### 錯誤處理
 
@@ -143,7 +143,10 @@ FROM node:20-slim AS server-deps
 WORKDIR /app/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --production
-RUN npx @puppeteer/browsers install chrome-headless-shell@stable --install-dir /app/chrome-headless-shell
+# @puppeteer/browsers 會安裝至 <install-dir>/chrome-headless-shell/<platform>-<buildId>/ 巢狀目錄
+# 安裝後建立 symlink 指向實際二進位檔，方便 CHROME_PATH 引用
+RUN npx @puppeteer/browsers install chrome-headless-shell@stable --install-dir /app/chrome-hs \
+    && ln -s /app/chrome-hs/chrome-headless-shell/*/chrome-headless-shell /usr/local/bin/chrome-headless-shell
 ```
 
 ### Nginx 設定
@@ -176,7 +179,7 @@ RUN npx @puppeteer/browsers install chrome-headless-shell@stable --install-dir /
 在 Dockerfile 中設定 `CHROME_PATH` 環境變數指向 chrome-headless-shell 的安裝路徑：
 
 ```dockerfile
-ENV CHROME_PATH=/app/chrome-headless-shell/chrome-headless-shell
+ENV CHROME_PATH=/usr/local/bin/chrome-headless-shell
 ```
 
 ## 不變的部分
