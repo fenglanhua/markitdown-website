@@ -22,17 +22,13 @@ const engineProgressBar = document.getElementById('engine-progress-bar');
 const engineProgressText = document.getElementById('engine-progress-text');
 const fileList           = document.getElementById('file-list');
 const listProgressText   = document.getElementById('list-progress-text');
-const btnUploadMore         = document.getElementById('btn-upload-more');
 const btnDownloadZip        = document.getElementById('btn-download-zip');
-const btnUploadMoreFooter        = document.getElementById('btn-upload-more-footer');
 const btnDownloadZipFooter       = document.getElementById('btn-download-zip-footer');
 const listProgressTextFooter     = document.getElementById('list-progress-text-footer');
+const btnRestart            = document.getElementById('btn-restart');
+const btnRestartFooter      = document.getElementById('btn-restart-footer');
 const urlInput         = document.getElementById('url-input');
 const btnFetchUrl      = document.getElementById('btn-fetch-url');
-const urlInputList          = document.getElementById('url-input-list');
-const btnFetchUrlList       = document.getElementById('btn-fetch-url-list');
-const urlInputListFooter    = document.getElementById('url-input-list-footer');
-const btnFetchUrlListFooter = document.getElementById('btn-fetch-url-list-footer');
 
 // ── 狀態管理 ──────────────────────────────────────────────────────────────
 
@@ -294,21 +290,12 @@ async function fetchAndConvert(urlString) {
       expanded: false,
     };
 
-    if (currentState === STATES.LIST) {
-      // 追加到現有清單
-      fileQueue.push(item);
-      fileList.appendChild(createFileItemEl(item));
-      updateListHeader();
-      const isWorkerFree = !fileQueue.some(i => i.status === 'converting');
-      if (isWorkerFree) processNextFile();
-    } else {
-      // 新佇列
-      fileQueue = [item];
-      currentIndex = -1;
-      showState(STATES.LIST);
-      renderFileList();
-      processNextFile();
-    }
+    // 新佇列
+    fileQueue = [item];
+    currentIndex = -1;
+    showState(STATES.LIST);
+    renderFileList();
+    processNextFile();
   } catch (err) {
     showError(`抓取時發生錯誤：${err.message}`);
   } finally {
@@ -341,25 +328,6 @@ function handleFiles(files) {
   processNextFile();
 }
 
-/**
- * 追加新檔案至現有佇列，並在閒置時繼續轉換。
- * 前提：僅在 currentState === STATES.LIST 時呼叫（引擎必然已就緒）。
- * @param {FileList|File[]} files
- */
-function appendFiles(files) {
-  const seen = new Set(fileQueue.map(i => i.filename));
-  const newItems = Array.from(files).map(file => {
-    const item = createFileItem(file, seen);
-    seen.add(item.filename);
-    return item;
-  });
-  fileQueue.push(...newItems);
-  newItems.forEach(item => fileList.appendChild(createFileItemEl(item)));
-  updateListHeader();
-
-  const isWorkerFree = !fileQueue.some(i => i.status === 'converting');
-  if (isWorkerFree) processNextFile();
-}
 
 // ── 下載功能 ──────────────────────────────────────────────────────────────
 
@@ -495,6 +463,8 @@ function updateListHeader() {
   const zipDisabled = done === 0 || isProcessing;
   btnDownloadZip.disabled = zipDisabled;
   btnDownloadZipFooter.disabled = zipDisabled;
+  btnRestart.disabled = isProcessing;
+  btnRestartFooter.disabled = isProcessing;
 }
 
 function renderFileList() {
@@ -597,44 +567,29 @@ dropZone.addEventListener('keydown', (e) => {
   }
 });
 
-// ── 清單拖放事件（全頁範圍）────────────────────────────────────────────────
-
-document.addEventListener('dragover', (e) => {
-  if (currentState !== STATES.LIST) return;
-  e.preventDefault();
-  document.body.classList.add('page--dragging');
-});
-
-document.addEventListener('dragleave', (e) => {
-  if (e.relatedTarget === null) {
-    document.body.classList.remove('page--dragging');
-  }
-});
-
-document.addEventListener('drop', (e) => {
-  if (currentState !== STATES.LIST) return;
-  e.preventDefault();
-  document.body.classList.remove('page--dragging');
-  const files = e.dataTransfer?.files;
-  if (files?.length) appendFiles(files);
-});
-
 fileInput.addEventListener('change', () => {
   const files = fileInput.files;
   if (!files?.length) return;
-  if (currentState === STATES.LIST) {
-    appendFiles(files);   // Task 9 實作
-  } else {
-    handleFiles(files);
-  }
+  handleFiles(files);
   fileInput.value = '';
 });
 
 // ── 按鈕事件 ──────────────────────────────────────────────────────────────
 
+/** 重置所有狀態，回到初始上傳畫面 */
+function resetToUpload() {
+  fileQueue = [];
+  currentIndex = -1;
+  fileList.innerHTML = '';
+  urlInput.value = '';
+  fileInput.value = '';
+  dismissError();
+  showState(STATES.UPLOAD);
+}
+
+btnRestart.addEventListener('click', resetToUpload);
+btnRestartFooter.addEventListener('click', resetToUpload);
 btnErrorDismiss.addEventListener('click', dismissError);
-btnUploadMore.addEventListener('click', () => fileInput.click());
-btnUploadMoreFooter.addEventListener('click', () => fileInput.click());
 
 // 清單項目互動（下載、預覽切換）
 fileList.addEventListener('click', (e) => {
@@ -665,32 +620,6 @@ urlInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     const url = urlInput.value.trim();
     if (url) fetchAndConvert(url);
-  }
-});
-
-// 列表頁 URL 抓取（header）
-btnFetchUrlList.addEventListener('click', () => {
-  const url = urlInputList.value.trim();
-  if (url) { fetchAndConvert(url); urlInputList.value = ''; }
-});
-urlInputList.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const url = urlInputList.value.trim();
-    if (url) { fetchAndConvert(url); urlInputList.value = ''; }
-  }
-});
-
-// 列表頁 URL 抓取（footer）
-btnFetchUrlListFooter.addEventListener('click', () => {
-  const url = urlInputListFooter.value.trim();
-  if (url) { fetchAndConvert(url); urlInputListFooter.value = ''; }
-});
-urlInputListFooter.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const url = urlInputListFooter.value.trim();
-    if (url) { fetchAndConvert(url); urlInputListFooter.value = ''; }
   }
 });
 

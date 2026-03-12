@@ -455,15 +455,6 @@ body {
   padding: 2rem 0;
 }
 
-.page--dragging::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  border: 3px dashed var(--color-highlight);
-  border-radius: var(--radius-sm);
-  pointer-events: none;
-  z-index: 100;
-}
 
 .list-header {
   display: flex;
@@ -707,16 +698,3 @@ body {
   cursor: not-allowed;
 }
 
-.url-input--compact {
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
-  border-radius: 6px;
-  width: 200px;
-  flex: none;
-}
-
-.url-input__btn--compact {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
