@@ -43,6 +43,7 @@ docker compose up
 - `magika` 套件已被 stub 取代，使 markitdown 回退至副檔名推斷路徑。
 - 靜態資源使用 CSS query parameter（`?v=VERSION`）進行快取破壞。
 - 功能完成時，須執行快取破壞：遞增 `APP_VERSION`（semver），同步更新 `index.html` 和 `sw.js`；更新 `index.html` 中所有 `?v=` 查詢參數；視情況遞增 `sw.js` 的 `CACHE_VERSION`。
+- 功能完成時，須更新 `README.md` 以反映最新的架構、功能、專案結構與使用方式，確保文件與實際程式碼保持一致。
 
 ## CI/CD
 
