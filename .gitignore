@@ -13,6 +13,9 @@ __pycache__/
 scripts/_tmp/
 scripts/*.tar.bz2
 
+# Node.js
+server/node_modules/
+
 # 系統檔案
 .DS_Store
 Thumbs.db

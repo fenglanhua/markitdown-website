@@ -1,0 +1,16 @@
+{
+  "name": "markitdown-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "URL fetch proxy for MarkItDown Website",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test __tests__/"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.5.0"
+  },
+  "devDependencies": {}
+}
