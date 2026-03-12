@@ -255,6 +255,13 @@ async function fetchUrlHandler(req, res) {
       if (err.name === 'TimeoutError' || err.message.includes('timeout')) {
         return res.status(408).json({ error: '請求超時（15 秒）' });
       }
+      // chrome-headless-shell 無法處理 PDF 等二進位內容，會觸發 ERR_ABORTED
+      // 降級為 streamDownload 直接下載
+      if (err.message.includes('net::ERR_ABORTED')) {
+        await page.close();
+        page = null;
+        return streamDownload(url, res);
+      }
       return res.status(502).json({ error: `無法連線至目標伺服器：${err.message}` });
     }
 

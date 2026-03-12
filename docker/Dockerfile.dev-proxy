@@ -16,16 +16,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    libxfixes3 \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/server
 
-# 安裝依賴 + chrome-headless-shell
+# 安裝依賴
 COPY server/package.json server/package-lock.json ./
-RUN npm ci --production \
-    && npx @puppeteer/browsers install chrome-headless-shell@stable \
-    && CHROME_BIN=$(find /app/server -name chrome-headless-shell -type f | head -1) \
+RUN npm ci --production
+
+# 安裝 chrome-headless-shell 到 /app/chrome-hs（避免被 bind mount 遮蓋）
+RUN mkdir -p /app/chrome-hs \
+    && cd /app/chrome-hs && /app/server/node_modules/.bin/browsers install chrome-headless-shell@stable \
+    && CHROME_BIN=$(find /app/chrome-hs -name chrome-headless-shell -type f | head -1) \
     && ln -s "$CHROME_BIN" /usr/local/bin/chrome-headless-shell
 
 ENV CHROME_PATH=/usr/local/bin/chrome-headless-shell
