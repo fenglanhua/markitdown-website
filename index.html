@@ -125,12 +125,16 @@
             id="url-input"
             class="url-input"
             placeholder="輸入網頁網址，例如 https://example.com"
+            aria-describedby="url-offline-hint"
             disabled
           />
           <button id="btn-fetch-url" class="btn btn--primary url-input__btn" type="button" disabled>
             轉換
           </button>
         </div>
+        <p id="url-offline-hint" class="url-input-hint" hidden>
+          目前無網路連線，無法使用網址轉換。
+        </p>
       </div>
     </section>
 
