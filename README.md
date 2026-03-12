@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-gonetone%2Fmarkitdown--website-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/gonetone/markitdown-website)
 
-在瀏覽器中將文件轉換為 Markdown，**所有處理完全在本機端進行，不會上傳任何資料至伺服器**。
+在瀏覽器中將文件轉換為 Markdown。**檔案轉換完全在本機端進行，不會上傳任何資料至伺服器**；網址轉換時，網頁內容會經由伺服器代理取得。
 
 本專案以 MIT License 開源於 [GitHub](https://github.com/GoneTone/markitdown-website)，歡迎提交 Issue 或 Pull Request。
 
@@ -12,7 +12,8 @@
 
 ## 功能特色
 
-- **隱私優先**：文件在瀏覽器內處理，完全離線可用，零伺服器傳輸
+- **隱私優先**：檔案在瀏覽器內處理，完全離線可用，零伺服器傳輸
+- **網址轉換**：輸入網頁網址，經由伺服器代理取得內容後在瀏覽器中轉換
 - **免安裝**：使用者只需一個瀏覽器，無需安裝任何軟體
 - **多格式支援**：PDF、DOCX、XLSX、PPTX、HTML、CSV、EPUB
 - **離線可用**：首次初始化後，無需網路即可使用（Service Worker 快取）
@@ -74,15 +75,22 @@ docker compose -f docker-compose-dev.yml up
 
 ```
 瀏覽器
-├── index.html               UI 介面（三態設計：上傳 / 轉換中 / 完成）
+├── index.html               UI 介面（兩態設計：上傳 / 結果）
 ├── css/style.css            深色主題樣式
 └── js/
-    ├── main.js              UI 邏輯、拖放事件、狀態管理
+    ├── main.js              UI 邏輯、拖放事件、狀態管理、URL 抓取
     └── converter.worker.js  Web Worker（背景執行緒）
             │
             ├── Pyodide 0.26.4（Python WASM）
             ├── markitdown 0.1.4（純 Python wheel）
             └── 依賴套件：pdfminer.six、python-docx、openpyxl、python-pptx…
+
+伺服器（Node.js）
+└── server/
+    ├── index.js             Express 入口（Rate Limiting、Health Check）
+    └── fetch-url.js         URL 代理（SSRF 防護、10MB 限制、15s 逾時）
+            │
+            └── Nginx 反向代理 /api/ → Node.js :3002
 ```
 
 ### 關鍵技術決策
@@ -95,6 +103,7 @@ docker compose -f docker-compose-dev.yml up
 | **COOP/COEP 標頭**          | SharedArrayBuffer 的瀏覽器安全要求                 |
 | **magika stub**           | 取代無 WASM 版的 magika，讓 markitdown 回退至副檔名推斷路徑 |
 | **Service Worker + Web App Manifest** | 實現離線快取與 PWA 可安裝性，瀏覽器自動提示安裝 |
+| **Node.js URL Proxy**     | 伺服器端代理取得網頁內容，含 SSRF 防護與速率限制       |
 
 ## 支援格式
 
@@ -129,11 +138,18 @@ markitdown-website/
 ├── js/
 │   ├── main.js                   UI 邏輯
 │   └── converter.worker.js       轉換 Web Worker
+├── server/
+│   ├── index.js                  Node.js Express 入口
+│   ├── fetch-url.js              URL 代理路由（SSRF 防護）
+│   ├── package.json
+│   └── __tests__/
+│       └── fetch-url.test.js     代理路由單元測試
 ├── scripts/
 │   └── download_wheels.py        建置腳本（下載 Pyodide + wheels）
 ├── docker/
 │   ├── nginx.conf                Docker 用 Nginx 設定（正式環境）
-│   └── nginx-dev.conf            Docker 用 Nginx 設定（開發環境）
+│   ├── nginx-dev.conf            Docker 用 Nginx 設定（開發環境）
+│   └── start.sh                  容器啟動腳本（Node.js + Nginx）
 ├── examples/
 │   ├── nginx.conf                一般部署用 Nginx 設定範本
 │   └── nginx-reverse-proxy.conf  Nginx 反向代理範本（Docker + SSL）
@@ -164,9 +180,14 @@ markitdown-website/
    python scripts/download_wheels.py
    ```
 
-2. 將整個目錄（含 `pyodide/`、`wheels/`）部署至 Nginx
+2. 安裝 Node.js 並啟動 URL 代理（若需要網址轉換功能）：
+   ```bash
+   cd server && npm ci && node index.js &
+   ```
 
-3. 參考 [examples/nginx.conf](examples/nginx.conf) 設定虛擬主機，**必須加入以下兩個標頭**：
+3. 將整個目錄（含 `pyodide/`、`wheels/`）部署至 Nginx
+
+4. 參考 [examples/nginx.conf](examples/nginx.conf) 設定虛擬主機，**必須加入以下兩個標頭**：
    ```nginx
    add_header Cross-Origin-Opener-Policy  "same-origin"  always;
    add_header Cross-Origin-Embedder-Policy "require-corp" always;
