@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MarkItDown — 文件轉 Markdown</title>
-  <meta name="description" content="免費線上文件轉換工具，將 PDF、DOCX、XLSX、PPTX、HTML、CSV、EPUB 轉換為 Markdown。所有處理在瀏覽器本機端完成，不會上傳任何資料至伺服器，完全保護隱私。" />
+  <meta name="description" content="免費線上文件轉換工具，將 PDF、DOCX、XLSX、PPTX、HTML、CSV、EPUB 轉換為 Markdown。檔案處理在瀏覽器本機端完成，網址轉換經由伺服器代理，完全保護隱私。" />
   <meta name="keywords" content="Markdown, 文件轉換, PDF 轉 Markdown, DOCX 轉 Markdown, MarkItDown, WebAssembly, 線上工具" />
   <link rel="canonical" href="https://markitdown.reh.tw/" />
 
@@ -113,6 +113,25 @@
           <span class="format-badge">EPUB</span>
         </div>
       </div>
+
+      <div class="url-divider">
+        <span class="url-divider__text">或</span>
+      </div>
+
+      <div class="url-input-area">
+        <div class="url-input-group">
+          <input
+            type="url"
+            id="url-input"
+            class="url-input"
+            placeholder="輸入網頁網址，例如 https://example.com"
+            disabled
+          />
+          <button id="btn-fetch-url" class="btn btn--primary url-input__btn" type="button" disabled>
+            轉換
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- 狀態二：轉換清單 -->
@@ -153,7 +172,7 @@
 
   <!-- 頁尾 -->
   <footer class="site-footer">
-    <p>使用 <a href="https://webassembly.org/" target="_blank" rel="noopener">WebAssembly</a> 技術，所有文件處理完全在您的瀏覽器中進行，不會上傳至任何伺服器。</p>
+    <p>使用 <a href="https://webassembly.org/" target="_blank" rel="noopener">WebAssembly</a> 技術，檔案轉換完全在您的瀏覽器中進行，不會上傳至任何伺服器。使用網址轉換時，網頁內容會經由伺服器代理取得。</p>
     <p>由 <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">Microsoft MarkItDown</a> 提供轉換功能。</p>
     <p>本專案以 MIT License 開源於 <a href="https://github.com/GoneTone/markitdown-website" target="_blank" rel="noopener">GitHub</a>。</p>
     <p>❤️使用 <a href="https://github.com/anthropics/claude-code" target="_blank" rel="noopener">Claude Code</a> 開發❤️</p>
