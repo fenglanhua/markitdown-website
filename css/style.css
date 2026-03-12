@@ -698,3 +698,13 @@ body {
   cursor: not-allowed;
 }
 
+.url-input-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #f0a500;
+}
+
+.url-input-hint[hidden] {
+  display: none;
+}
+
