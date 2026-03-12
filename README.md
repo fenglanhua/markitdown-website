@@ -175,15 +175,20 @@ markitdown-website/
 
 ## 部署（不使用 Docker）
 
-1. 執行建置腳本下載所有資源：
+1. Clone 專案並下載所有資源：
    ```bash
+   git clone https://github.com/GoneTone/markitdown-website.git
+   cd markitdown-website
    python scripts/download_wheels.py
    ```
 
-2. 安裝 Node.js 並啟動 URL 代理（若需要網址轉換功能）：
+2. 安裝並啟動 URL 代理（若需要網址轉換功能）：
    ```bash
-   cd server && npm ci && node index.js &
+   cd server
+   npm ci
+   node index.js
    ```
+   > 建議使用 [PM2](https://pm2.keymetrics.io/) 或 systemd 管理 Node.js 程序，確保服務在背景持續運行並自動重啟。
 
 3. 將整個目錄（含 `pyodide/`、`wheels/`）部署至 Nginx
 
