@@ -644,9 +644,19 @@ async function checkConnectivity() {
       method: 'HEAD',
       cache: 'no-store',
     });
+    isOnline = true;
     offlineBanner.setAttribute('hidden', '');
+    urlOfflineHint.setAttribute('hidden', '');
+    if (isEngineReady) {
+      urlInput.disabled = false;
+      btnFetchUrl.disabled = false;
+    }
   } catch {
+    isOnline = false;
     offlineBanner.removeAttribute('hidden');
+    urlOfflineHint.removeAttribute('hidden');
+    urlInput.disabled = true;
+    btnFetchUrl.disabled = true;
   }
 }
 
