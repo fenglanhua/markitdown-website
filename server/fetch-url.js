@@ -9,6 +9,8 @@
 
 const { URL } = require('node:url');
 const dns = require('node:dns/promises');
+const { ensureBrowser, isDirectDownloadType } = require('./browser');
+const { pageSemaphore } = require('./semaphore-instance');
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const TIMEOUT = 15_000; // 15 seconds
@@ -87,7 +89,98 @@ async function resolveAndCheck(hostname) {
 }
 
 /**
- * Express 路由 handler
+ * 使用 fetch() 直接下載二進位內容（PDF、DOCX 等）
+ * 使用 redirect: 'manual' 搭配手動跟隨，每次重導向前檢查 SSRF。
+ */
+async function streamDownload(url, res) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT);
+
+  let currentUrl = url.href;
+  let response;
+  const MAX_REDIRECTS = 5;
+
+  try {
+    // 初始 URL 也重新做 DNS 檢查（防止 DNS rebinding：
+    // 從 fetchUrlHandler 的 resolveAndCheck 到此處有時間差）
+    const initialCheck = await resolveAndCheck(url.hostname);
+    if (initialCheck.error) {
+      clearTimeout(timer);
+      return res.status(403).json({ error: '不允許存取內部網路位址' });
+    }
+
+    for (let i = 0; i <= MAX_REDIRECTS; i++) {
+      response = await fetch(currentUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': USER_AGENT },
+        redirect: 'manual',
+      });
+
+      // 處理重導向
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) break;
+        const redirectUrl = new URL(location, currentUrl);
+        // SSRF 檢查重導向目標
+        const check = await resolveAndCheck(redirectUrl.hostname);
+        if (check.error) {
+          clearTimeout(timer);
+          return res.status(403).json({ error: '不允許存取內部網路位址' });
+        }
+        currentUrl = redirectUrl.href;
+        continue;
+      }
+      break;
+    }
+    clearTimeout(timer);
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      return res.status(408).json({ error: '請求超時（15 秒）' });
+    }
+    return res.status(502).json({ error: `無法連線至目標伺服器：${err.message}` });
+  }
+
+  if (!response.ok) {
+    return res.status(502).json({
+      error: `目標伺服器回應錯誤：${response.status} ${response.statusText}`,
+    });
+  }
+
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_SIZE) {
+    return res.status(413).json({ error: `回應過大（${Math.round(contentLength / 1024 / 1024)}MB），上限為 10MB` });
+  }
+
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  res.set('Content-Type', contentType);
+  res.set('X-Original-Url', url.href);
+
+  try {
+    const reader = response.body.getReader();
+    let totalSize = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.length;
+      if (totalSize > MAX_SIZE) {
+        reader.cancel();
+        if (res.headersSent) { res.destroy(); return; }
+        return res.status(413).json({ error: '回應過大，上限為 10MB' });
+      }
+      res.write(Buffer.from(value));
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) {
+      return res.status(502).json({ error: `讀取回應時發生錯誤：${err.message}` });
+    }
+    res.destroy();
+  }
+}
+
+/**
+ * Express 路由 handler（Puppeteer 版）
  */
 async function fetchUrlHandler(req, res) {
   // 1. 驗證 URL
@@ -103,72 +196,105 @@ async function fetchUrlHandler(req, res) {
     return res.status(dnsResult.status).json({ error: dnsResult.error });
   }
 
-  // 3. 抓取目標 URL
-  let response;
+  // 3. 取得 semaphore permit
+  if (!pageSemaphore.tryAcquire()) {
+    return res.status(503).json({ error: '伺服器忙碌中，請稍後再試' });
+  }
+
+  // 4. 取得 browser instance
+  const browser = await ensureBrowser();
+  if (!browser) {
+    pageSemaphore.release();
+    return res.status(503).json({ error: '瀏覽器引擎暫時無法使用' });
+  }
+
+  let page = null;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT);
+    page = await browser.newPage();
+    page.setDefaultNavigationTimeout(TIMEOUT);
 
-    response = await fetch(url.href, {
-      signal: controller.signal,
-      headers: { 'User-Agent': USER_AGENT },
-      redirect: 'follow',
-    });
+    // 5. SSRF 重導向攔截（使用 flag 追蹤初始請求）
+    let initialNavigationDone = false;
+    await page.setRequestInterception(true);
+    page.on('request', async (interceptedRequest) => {
+      if (interceptedRequest.isInterceptResolutionHandled()) return;
 
-    clearTimeout(timer);
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      return res.status(408).json({ error: '請求超時（15 秒）' });
-    }
-    return res.status(502).json({ error: `無法連線至目標伺服器：${err.message}` });
-  }
-
-  if (!response.ok) {
-    return res.status(502).json({
-      error: `目標伺服器回應錯誤：${response.status} ${response.statusText}`,
-    });
-  }
-
-  // 4. 檢查 content-length（如果有的話）
-  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-  if (contentLength > MAX_SIZE) {
-    return res.status(413).json({ error: `回應過大（${Math.round(contentLength / 1024 / 1024)}MB），上限為 10MB` });
-  }
-
-  // 5. 串流回傳並檢查大小
-  const contentType = response.headers.get('content-type') || 'application/octet-stream';
-  res.set('Content-Type', contentType);
-  res.set('X-Original-Url', url.href);
-
-  try {
-    const reader = response.body.getReader();
-    let totalSize = 0;
-
-    // 使用手動讀取來檢查大小限制
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      totalSize += value.length;
-      if (totalSize > MAX_SIZE) {
-        reader.cancel();
-        // 如果 headers 已送出就只能斷開連線
-        if (res.headersSent) {
-          res.destroy();
+      if (interceptedRequest.isNavigationRequest() && initialNavigationDone) {
+        // 這是重導向，檢查目標是否為私有 IP
+        try {
+          const reqUrl = new URL(interceptedRequest.url());
+          const check = await resolveAndCheck(reqUrl.hostname);
+          if (check.error) {
+            interceptedRequest.abort('accessdenied');
+            return;
+          }
+        } catch {
+          interceptedRequest.abort('failed');
           return;
         }
-        return res.status(413).json({ error: '回應過大，上限為 10MB' });
       }
 
-      res.write(Buffer.from(value));
+      if (interceptedRequest.isNavigationRequest() && !initialNavigationDone) {
+        initialNavigationDone = true;
+      }
+
+      interceptedRequest.continue();
+    });
+
+    // 6. 導航
+    let response;
+    try {
+      response = await page.goto(url.href, {
+        waitUntil: 'networkidle2',
+        timeout: TIMEOUT,
+      });
+    } catch (err) {
+      if (err.message.includes('net::ERR_ACCESS_DENIED') || err.message.includes('accessdenied')) {
+        return res.status(403).json({ error: '不允許存取內部網路位址' });
+      }
+      if (err.name === 'TimeoutError' || err.message.includes('timeout')) {
+        return res.status(408).json({ error: '請求超時（15 秒）' });
+      }
+      return res.status(502).json({ error: `無法連線至目標伺服器：${err.message}` });
     }
 
-    res.end();
+    // 7. 檢查 response
+    if (!response) {
+      return res.status(502).json({ error: '無法取得頁面回應' });
+    }
+    const status = response.status();
+    if (status < 200 || status >= 300) {
+      return res.status(502).json({ error: `目標伺服器回應錯誤：${status}` });
+    }
+
+    // 8. Content-Type 分流
+    const responseContentType = response.headers()['content-type'] || '';
+    if (isDirectDownloadType(responseContentType)) {
+      await page.close();
+      page = null;
+      return streamDownload(url, res);
+    }
+
+    // 9. HTML 路徑：取得渲染後內容
+    const html = await page.content();
+    const htmlSize = Buffer.byteLength(html, 'utf8');
+    if (htmlSize > MAX_SIZE) {
+      return res.status(413).json({ error: '回應過大，上限為 10MB' });
+    }
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('X-Original-Url', url.href);
+    res.send(html);
   } catch (err) {
     if (!res.headersSent) {
-      return res.status(502).json({ error: `讀取回應時發生錯誤：${err.message}` });
+      return res.status(502).json({ error: `抓取頁面時發生錯誤：${err.message}` });
     }
     res.destroy();
+  } finally {
+    if (page) {
+      try { await page.close(); } catch { /* ignore */ }
+    }
+    pageSemaphore.release();
   }
 }
 

@@ -97,3 +97,20 @@ describe('isPrivateIP', () => {
     assert.equal(isPrivateIP('203.0.113.1'), false);
   });
 });
+
+const { isDirectDownloadType } = require('../browser');
+
+describe('isDirectDownloadType (整合)', () => {
+  it('PDF 走直接下載', () => {
+    assert.equal(isDirectDownloadType('application/pdf'), true);
+  });
+
+  it('HTML 走渲染', () => {
+    assert.equal(isDirectDownloadType('text/html'), false);
+    assert.equal(isDirectDownloadType('text/html; charset=utf-8'), false);
+  });
+
+  it('未知類型走渲染', () => {
+    assert.equal(isDirectDownloadType('application/json'), false);
+  });
+});
