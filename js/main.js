@@ -27,6 +27,8 @@ const btnDownloadZip        = document.getElementById('btn-download-zip');
 const btnUploadMoreFooter        = document.getElementById('btn-upload-more-footer');
 const btnDownloadZipFooter       = document.getElementById('btn-download-zip-footer');
 const listProgressTextFooter     = document.getElementById('list-progress-text-footer');
+const urlInput         = document.getElementById('url-input');
+const btnFetchUrl      = document.getElementById('btn-fetch-url');
 
 // ── 狀態管理 ──────────────────────────────────────────────────────────────
 
@@ -65,6 +67,8 @@ function createWorker() {
         // 等進度條 100% 的 transition（0.5s）播完後，同步顯示文件框並隱藏進度條
         setTimeout(() => {
           dropZone.classList.remove('drop-zone--disabled');
+          urlInput.disabled = false;
+          btnFetchUrl.disabled = false;
           document.getElementById('upload-engine-status').hidden = true;
         }, 600);
         break;
@@ -128,6 +132,56 @@ const SUPPORTED_EXTENSIONS = new Set([
   'html', 'htm', 'csv', 'epub',
 ]);
 
+/** Content-Type → 副檔名對應表 */
+const MIME_TO_EXT = {
+  'text/html': '.html',
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  'text/csv': '.csv',
+  'application/epub+zip': '.epub',
+};
+
+/**
+ * 從 Content-Type header 取得 MIME type（忽略 charset 等參數）
+ * @param {string} contentType
+ * @returns {string}
+ */
+function parseMimeType(contentType) {
+  return (contentType || '').split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * 從 URL 和 Content-Type 產生檔名
+ * @param {string} urlString
+ * @param {string} mimeType - 已解析的 MIME type
+ * @returns {string|null}
+ */
+function generateFilename(urlString, mimeType) {
+  const ext = MIME_TO_EXT[mimeType];
+  if (!ext) return null; // 不支援的類型
+
+  let baseName;
+  try {
+    const url = new URL(urlString);
+    const pathSegments = url.pathname.split('/').filter(Boolean);
+    const lastSegment = pathSegments[pathSegments.length - 1] || '';
+
+    if (lastSegment) {
+      // 去除原有副檔名
+      const dotIndex = lastSegment.lastIndexOf('.');
+      baseName = dotIndex > 0 ? lastSegment.slice(0, dotIndex) : lastSegment;
+    } else {
+      baseName = url.hostname;
+    }
+  } catch {
+    baseName = 'page';
+  }
+
+  return baseName + ext;
+}
+
 /** 驗證副檔名是否支援 */
 function isSupportedFile(filename) {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
@@ -175,6 +229,91 @@ function createFileItem(file, existingNames = new Set()) {
     _startTime: 0,
     expanded: false,
   };
+}
+
+/**
+ * 從 URL 抓取內容並建立虛擬 FileItem 送入轉換佇列
+ * @param {string} urlString
+ */
+async function fetchAndConvert(urlString) {
+  // 前端驗證
+  if (!/^https?:\/\//i.test(urlString)) {
+    showError('請輸入有效的網址（以 http:// 或 https:// 開頭）');
+    return;
+  }
+
+  // UI 狀態：抓取中
+  urlInput.disabled = true;
+  btnFetchUrl.disabled = true;
+  btnFetchUrl.textContent = '抓取中...';
+
+  try {
+    const response = await fetch(`/api/fetch-url?url=${encodeURIComponent(urlString)}`);
+
+    if (!response.ok) {
+      let errMsg = `抓取失敗（${response.status}）`;
+      try {
+        const errData = await response.json();
+        if (errData.error) errMsg = errData.error;
+      } catch { /* ignore parse error */ }
+      showError(errMsg);
+      return;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const mimeType = parseMimeType(contentType);
+    const filename = generateFilename(urlString, mimeType);
+
+    if (!filename) {
+      showError(`不支援的內容類型：${mimeType || '未知'}`);
+      return;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+
+    // 建立虛擬 FileItem
+    const seen = new Set(fileQueue.map(i => i.filename));
+    const dedupedFilename = deduplicateFilename(filename, seen);
+
+    const item = {
+      id: crypto.randomUUID(),
+      file: null,
+      arrayBuffer,
+      filename: dedupedFilename,
+      status: 'waiting',
+      errorMessage: '',
+      markdown: '',
+      charCount: 0,
+      lineCount: 0,
+      duration: 0,
+      _startTime: 0,
+      expanded: false,
+    };
+
+    if (currentState === STATES.LIST) {
+      // 追加到現有清單
+      fileQueue.push(item);
+      fileList.appendChild(createFileItemEl(item));
+      updateListHeader();
+      const isWorkerFree = !fileQueue.some(i => i.status === 'converting');
+      if (isWorkerFree) processNextFile();
+    } else {
+      // 新佇列
+      fileQueue = [item];
+      currentIndex = -1;
+      showState(STATES.LIST);
+      renderFileList();
+      processNextFile();
+    }
+  } catch (err) {
+    showError(`抓取時發生錯誤：${err.message}`);
+  } finally {
+    // 恢復 UI 狀態
+    urlInput.disabled = !isEngineReady;
+    btnFetchUrl.disabled = !isEngineReady;
+    btnFetchUrl.textContent = '轉換';
+    urlInput.value = '';
+  }
 }
 
 /**
@@ -380,6 +519,25 @@ function processNextFile() {
   item._startTime = Date.now();
   updateFileItem(item);
 
+  // URL 抓取的虛擬 FileItem 已有 arrayBuffer，直接送入 Worker
+  if (item.arrayBuffer) {
+    const buffer = item.arrayBuffer;
+    item.arrayBuffer = null; // 轉移後釋放參考
+    try {
+      worker.postMessage(
+        { type: 'convert', file: buffer, filename: item.filename },
+        [buffer]
+      );
+    } catch (err) {
+      item.status = 'error';
+      item.errorMessage = '無法傳送檔案至 Worker';
+      updateFileItem(item);
+      updateListHeader();
+      processNextFile();
+    }
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
     worker.postMessage(
@@ -491,6 +649,20 @@ fileList.addEventListener('click', (e) => {
 
 btnDownloadZip.addEventListener('click', downloadAllZip);
 btnDownloadZipFooter.addEventListener('click', downloadAllZip);
+
+// URL 抓取
+btnFetchUrl.addEventListener('click', () => {
+  const url = urlInput.value.trim();
+  if (url) fetchAndConvert(url);
+});
+
+urlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const url = urlInput.value.trim();
+    if (url) fetchAndConvert(url);
+  }
+});
 
 // ── 離線狀態偵測 ──────────────────────────────────────────────────────────
 
