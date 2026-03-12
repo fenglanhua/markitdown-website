@@ -1,14 +1,13 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { fetchUrlHandler } = require('./fetch-url');
+const { launchBrowser, closeBrowser } = require('./browser');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// 信任一層 proxy（nginx），讓 req.ip 取得真實 IP
 app.set('trust proxy', 1);
 
-// Rate limiting：每個 IP 每分鐘 30 次
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -18,15 +17,36 @@ const limiter = rateLimit({
 });
 
 app.use('/fetch-url', limiter);
-
-// 路由
 app.get('/fetch-url', fetchUrlHandler);
-
-// 健康檢查
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.listen(PORT, () => {
-  console.log(`Proxy server listening on port ${PORT}`);
+async function start() {
+  try {
+    await launchBrowser();
+    console.log('Browser ready');
+  } catch (err) {
+    console.error('Warning: Browser launch failed:', err.message);
+    console.error('Will retry on first request');
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Proxy server listening on port ${PORT}`);
+  });
+}
+
+// 優雅關閉
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing browser...');
+  await closeBrowser();
+  process.exit(0);
 });
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing browser...');
+  await closeBrowser();
+  process.exit(0);
+});
+
+start();
 
 module.exports = app;
